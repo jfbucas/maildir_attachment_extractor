@@ -21,6 +21,8 @@ boundaries =  None
 nb_boundaries = 0 
 username = None
 mailfolder = None
+filename = ""
+filebase64 = False
 
 # -------------
 # Merge the line counter and the lines
@@ -38,6 +40,47 @@ def get_line( nb_l ):
 		return ""
 
 # -------------
+def get_next_line( nb_l ):
+
+	ct = get_content_type( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_content_name( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_content_description( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_content_encoding( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_content_disposition( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_x_attachment( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_rt_attachment( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_skip_line( nb_l + 1 )
+	if ct != None:
+		return ct
+
+	ct = get_external_attachment( nb_l + 1 )
+	if ct != None:
+		return None
+
+	return None
+
+# -------------
 def get_boundary( nb_l ):
 	global boundaries
 	global nb_boundaries
@@ -50,10 +93,9 @@ def get_boundary( nb_l ):
 
 			o = [ 1, [ l ] ]
 
-			ct = get_content_type( nb_l + 1 )
+			ct = get_next_line( nb_l )
 			if ct != None:
 				return merge_o(o, ct)
-		
 	return None
 
 # -------------
@@ -79,14 +121,46 @@ def get_content_type( nb_l ):
 		print("\t>", l, end="")
 		o = [ 1, [ l ] ]
 
-		ct = get_content_name( nb_l + 1 )
+		ct = get_next_line( nb_l )
 		if ct != None:
 			return merge_o(o, ct)
 
-		ct = get_content_encoding( nb_l + 1 )
+		ct = get_content_type_options( nb_l + 1 )
 		if ct != None:
 			return merge_o(o, ct)
+
 	return None
+
+# -------------
+def get_content_type_options( nb_l ):
+	global filename
+	l=get_line( nb_l )
+
+	if l.strip().lower().startswith('x-mac-creator='):
+		pass
+	elif l.strip().lower().startswith('x-mac-type='):
+		pass
+	elif l.strip().lower().startswith('x-mac-hide-extension='):
+		pass
+	elif l.strip().lower().startswith('x-unix-mode='):
+		pass
+	elif l.strip().lower().startswith('name='):
+		pass
+	else:
+		return None
+
+	o = [ 1, [ l ] ]
+
+	ct = get_next_line( nb_l )
+	if ct != None:
+		return merge_o(o, ct)
+
+	ct = get_content_type_options( nb_l + 1 )
+	if ct != None:
+		return merge_o(o, ct)
+
+	return None
+
 
 # -------------
 def get_content_name( nb_l ):
@@ -95,7 +169,7 @@ def get_content_name( nb_l ):
 		#o = [ 1, [ l[:-2]+'.zip"\n' ] ]
 		o = [ 1, [ l ] ]
 
-		ct = get_content_encoding( nb_l + 1 )
+		ct = get_next_line( nb_l )
 		if ct != None:
 			return merge_o(o, ct)
 	return None
@@ -103,40 +177,38 @@ def get_content_name( nb_l ):
 
 # -------------
 def get_content_encoding( nb_l ):
+	global filebase64
 	l=get_line( nb_l )
 	if l.lower().startswith('content-transfer-encoding: base64'):
+		print("\t>", l, end="")
+		filebase64 = True
 		o = [ 1, [ l ] ]
 
-		ct = get_content_disposition( nb_l + 1 )
+		ct = get_next_line( nb_l )
 		if ct != None:
+			filebase64 = False
 			return merge_o(o, ct)
 
-		ct = get_content_description( nb_l + 1 )
-		if ct != None:
-			return merge_o(o, ct)
+		filebase64 = False
 
-		#return o
-		
 	return None
 
 # -------------
 def get_content_disposition( nb_l ):
+	global filename
 	l=get_line( nb_l )
 	if l.lower().startswith('content-disposition:'):
 		o = [ 1, [ l ] ]
+		print("\t>", l, end="")
 
-		if "filename=" in l:
-			filename = l.split('filename=')[1]
-			ct = get_external_attachment( nb_l + 1 )
-			if ct != None:
-				return None
+		if 'filename=' in l:
+			filename = l.split('filename=')[1].strip().replace('\"','')
 
-			ct = get_skip_line( nb_l + 1, filename )
-			if ct != None:
-				return merge_o(o, ct)
+		ct = get_next_line( nb_l )
+		if ct != None:
+			return merge_o(o, ct)
 			
-			
-		ct = get_content_filename( nb_l + 1 )
+		ct = get_content_disposition_options( nb_l + 1 )
 		if ct != None:
 			return merge_o(o, ct)
 
@@ -144,49 +216,64 @@ def get_content_disposition( nb_l ):
 	return None
 
 # -------------
-def get_content_description( nb_l ):
+def get_content_disposition_options( nb_l ):
+	global filename
 	l=get_line( nb_l )
-	if l.lower().startswith('content-description:'):
-		o = [ 1, [ l ] ]
 
-		ct = get_content_disposition( nb_l + 1 )
-		if ct != None:
-			return merge_o(o, ct)
-		
-	return None
-
-# -------------
-def get_content_filename( nb_l ):
-	l=get_line( nb_l )
 	if l.strip().lower().startswith('filename="'):
-		o = [ 1, [ l ] ]
 		#o = [ 1, [ l[:-2]+'.zip"\n' ] ]
 		filename = l.split('"')[1]
 		print("\t> Filename: "+filename)
-
-		ct = get_external_attachment( nb_l + 1 )
-		if ct != None:
-			return None
-
-		ct = get_skip_line( nb_l + 1, filename )
-		if ct != None:
-			return merge_o(o, ct)
-
-
-	if l.strip().lower().startswith('filename*0="'):
-		o = [ 1, [ l[:-2]+'.zip"\n' ] ]
+	elif l.strip().lower().startswith('filename*0="'):
+		#o = [ 1, [ l[:-2]+'.zip"\n' ] ]
 		filename = l.split('"')[1]
 		print("\t> Filename: "+filename)
+	elif l.strip().lower().startswith('filename*1="'):
+		#o = [ 1, [ l[:-2]+'.zip"\n' ] ]
+		filename += l.split('"')[1]
+		print("\t> Filename: "+filename)
+	elif l.strip().lower().startswith('filename='):
+		#o = [ 1, [ l[:-2]+'.zip"\n' ] ]
+		filename = l.split('=')[1].strip()
+		print("\t> Filename: "+filename)
+	elif l.strip().lower().startswith('creation-date="'):
+		#print("\t>", l, end="")
+		pass
+	elif l.strip().lower().startswith('modification-date="'):
+		#print("\t>", l, end="")
+		pass
+	elif l.strip().lower().startswith('size='):
+		#print("\t>", l, end="")
+		pass
+	else:
+		return None
 
-		ct = get_external_attachment( nb_l + 1 )
-		if ct != None:
-			return None
+	o = [ 1, [ l ] ]
 
-		ct = get_skip_line( nb_l + 1, filename )
+	ct = get_next_line( nb_l )
+	if ct != None:
+		return merge_o(o, ct)
+
+	ct = get_content_disposition_options( nb_l + 1 )
+	if ct != None:
+		return merge_o(o, ct)
+
+	return None
+
+# -------------
+def get_content_description( nb_l ):
+	l=get_line( nb_l )
+	if l.lower().startswith('content-description:'):
+		print("\t>", l, end="")
+		o = [ 1, [ l ] ]
+
+		ct = get_next_line( nb_l )
 		if ct != None:
 			return merge_o(o, ct)
 
+		
 	return None
+
 
 # -------------
 def get_external_attachment( nb_l ):
@@ -199,9 +286,34 @@ def get_external_attachment( nb_l ):
 
 	return None
 
+# -------------
+def get_x_attachment( nb_l ):
+
+	l=get_line( nb_l )
+	if l.strip().lower().startswith('x-attachment-id:'):
+		o = [ 1, [ l ] ]
+
+		ct = get_next_line( nb_l )
+		if ct != None:
+			return merge_o(o, ct)
+
+	return None
 
 # -------------
-def get_skip_line( nb_l, filename ):
+def get_rt_attachment( nb_l ):
+
+	l=get_line( nb_l )
+	if l.strip().lower().startswith('rt-attachment:'):
+		o = [ 1, [ l ] ]
+
+		ct = get_next_line( nb_l )
+		if ct != None:
+			return merge_o(o, ct)
+
+	return None
+
+# -------------
+def get_skip_line( nb_l ):
 	l=get_line( nb_l )
 	if l == "\n":
 		o = [ 1, [ l ] ]
@@ -209,10 +321,10 @@ def get_skip_line( nb_l, filename ):
 		ct = get_content_uu( nb_l + 1 )
 		if ct != None:
 
-			#ct = get_packed( ct, filename )
+			#ct = get_packed( ct )
 			#if ct != None:
 			#	return merge_o(o, ct)
-			ct = get_detach( ct, filename )
+			ct = get_detach( ct )
 			if ct != None:
 				# if detach is successful, the empty line is included in ct
 				#return merge_o(o, ct)
@@ -250,7 +362,8 @@ def get_content_uu( nb_l ):
 	return None
 
 # -------------
-def get_packed( ct, filename ):
+def get_packed( ct ):
+	global filename
 
 	# Write attachment
 	s = ""
@@ -290,21 +403,31 @@ def get_packed( ct, filename ):
 	return None
 
 # -------------
-def get_detach( ct, filename ):
+def get_detach( ct ):
+	global mailfolder, username, filename, filebase64
 
-	global mailfolder, username
-
-	# Write attachment
-	s = ""
-	for l in ct[1]:
-		s += l.strip()
-	dec = base64.standard_b64decode(s)
+	if filename == "":
+		return None
 
 	if not os.path.exists( mailfolder):
 		os.makedirs( mailfolder )
 
-	with open( mailfolder + "/" + filename, "bw" ) as fp:
-		fp.write( dec )
+	# Write attachment
+	s = ""
+	dec = ""
+	if filebase64:
+		for l in ct[1]:
+			s += l.strip()
+		dec = base64.standard_b64decode(s)
+		with open( mailfolder + "/" + filename, "bw" ) as fp:
+			fp.write( dec )
+	else:
+		for l in ct[1]:
+			s += l
+		with open( mailfolder + "/" + filename, "w" ) as fp:
+			fp.write( s )
+
+
 
 	ct[1] = [
 		"X-Mozilla-External-Attachment-URL: file:///home/" + username + "/" + mailfolder+"/"+filename+"\n\n",
@@ -360,11 +483,18 @@ def main():
 		if l.lower().startswith('content-type: multipart/mixed; boundary="'):
 			boundaries.append( l.split('"')[1] )
 			print("\t- Boundary is ", boundaries[-1])
+		elif l.lower().startswith('content-type: multipart/mixed; boundary='):
+			boundaries.append( l.split('=')[1].strip() )
+			print("\t- Boundary is ", boundaries[-1])
 		elif l.lower().startswith('content-type: multipart/mixed;'):
 			l2=get_line( nb_l+1 )
 			if l2.strip().startswith('boundary="'):
 				boundaries.append( l2.split('"')[1] )
 				print("\t- Boundary is ", boundaries[ -1 ])
+			elif l2.strip().startswith('boundary='):
+				boundaries.append( l2.split('=')[1].strip() )
+				print("\t- Boundary is ", boundaries[ -1 ])
+
 		nb_l+=1
 
 	# Get the work done on the multipart
